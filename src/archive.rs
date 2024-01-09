@@ -1,4 +1,4 @@
-use std::cell::{Cell, RefCell};
+use std::cell::{RefCell};
 use std::cmp;
 use std::convert::TryFrom;
 use std::fs;
@@ -6,6 +6,7 @@ use std::io::prelude::*;
 use std::io::{self, SeekFrom};
 use std::marker;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::entry::{EntryFields, EntryIo};
 use crate::error::TarError;
@@ -21,7 +22,7 @@ pub struct Archive<R: ?Sized + Read> {
 }
 
 pub struct ArchiveInner<R: ?Sized> {
-    pos: Cell<u64>,
+    pos: AtomicU64,
     mask: u32,
     unpack_xattrs: bool,
     preserve_permissions: bool,
@@ -62,7 +63,7 @@ impl<R: Read> Archive<R> {
                 overwrite: true,
                 ignore_zeros: false,
                 obj: RefCell::new(obj),
-                pos: Cell::new(0),
+                pos: AtomicU64::new(0),
             },
         }
     }
@@ -198,7 +199,7 @@ impl Archive<dyn Read + '_> {
         &'a self,
         seekable_archive: Option<&'a Archive<dyn SeekRead + 'a>>,
     ) -> io::Result<EntriesFields<'a>> {
-        if self.inner.pos.get() != 0 {
+        if self.inner.pos.load(Ordering::SeqCst) != 0 {
             return Err(other(
                 "cannot call entries unless archive is at \
                  position 0",
@@ -281,7 +282,7 @@ impl<'a> EntriesFields<'a> {
         let mut header_pos = self.next;
         loop {
             // Seek to the start of the next header in the archive
-            let delta = self.next - self.archive.inner.pos.get();
+            let delta = self.next - self.archive.inner.pos.load(Ordering::SeqCst);
             self.skip(delta)?;
 
             // EOF is an indicator that we are at the end of the archive.
@@ -580,7 +581,7 @@ impl<'a> Iterator for EntriesFields<'a> {
 impl<'a, R: ?Sized + Read> Read for &'a ArchiveInner<R> {
     fn read(&mut self, into: &mut [u8]) -> io::Result<usize> {
         let i = self.obj.borrow_mut().read(into)?;
-        self.pos.set(self.pos.get() + i as u64);
+        self.pos.fetch_add(i as u64, Ordering::SeqCst);
         Ok(i)
     }
 }
@@ -588,7 +589,7 @@ impl<'a, R: ?Sized + Read> Read for &'a ArchiveInner<R> {
 impl<'a, R: ?Sized + Seek> Seek for &'a ArchiveInner<R> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         let pos = self.obj.borrow_mut().seek(pos)?;
-        self.pos.set(pos);
+        self.pos.store(pos, Ordering::SeqCst);
         Ok(pos)
     }
 }

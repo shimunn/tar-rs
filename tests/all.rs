@@ -31,6 +31,12 @@ macro_rules! tar {
 
 mod header;
 
+#[test]
+fn archive_is_send() {
+    fn is_send<T:Send>(_: Option<T>) {}
+    is_send::<Archive<File>>(None);
+}
+
 /// test that we can concatenate the simple.tar archive and extract the same entries twice when we
 /// use the ignore_zeros option.
 #[test]
