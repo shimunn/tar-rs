@@ -1,4 +1,3 @@
-use std::cell::{RefCell};
 use std::cmp;
 use std::convert::TryFrom;
 use std::fs;
@@ -7,6 +6,7 @@ use std::io::{self, SeekFrom};
 use std::marker;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::RwLock;
 
 use crate::entry::{EntryFields, EntryIo};
 use crate::error::TarError;
@@ -30,7 +30,7 @@ pub struct ArchiveInner<R: ?Sized> {
     preserve_mtime: bool,
     overwrite: bool,
     ignore_zeros: bool,
-    obj: RefCell<R>,
+    obj: RwLock<R>,
 }
 
 /// An iterator over the entries of an archive.
@@ -62,7 +62,7 @@ impl<R: Read> Archive<R> {
                 preserve_mtime: true,
                 overwrite: true,
                 ignore_zeros: false,
-                obj: RefCell::new(obj),
+                obj: RwLock::new(obj),
                 pos: AtomicU64::new(0),
             },
         }
@@ -70,7 +70,7 @@ impl<R: Read> Archive<R> {
 
     /// Unwrap this archive, returning the underlying object.
     pub fn into_inner(self) -> R {
-        self.inner.obj.into_inner()
+        self.inner.obj.into_inner().unwrap()
     }
 
     /// Construct an iterator over the entries in this archive.
@@ -580,7 +580,7 @@ impl<'a> Iterator for EntriesFields<'a> {
 
 impl<'a, R: ?Sized + Read> Read for &'a ArchiveInner<R> {
     fn read(&mut self, into: &mut [u8]) -> io::Result<usize> {
-        let i = self.obj.borrow_mut().read(into)?;
+        let i = self.obj.write().unwrap().read(into)?;
         self.pos.fetch_add(i as u64, Ordering::SeqCst);
         Ok(i)
     }
@@ -588,7 +588,7 @@ impl<'a, R: ?Sized + Read> Read for &'a ArchiveInner<R> {
 
 impl<'a, R: ?Sized + Seek> Seek for &'a ArchiveInner<R> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
-        let pos = self.obj.borrow_mut().seek(pos)?;
+        let pos = self.obj.write().unwrap().seek(pos)?;
         self.pos.store(pos, Ordering::SeqCst);
         Ok(pos)
     }

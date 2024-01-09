@@ -32,9 +32,9 @@ macro_rules! tar {
 mod header;
 
 #[test]
-fn archive_is_send() {
-    fn is_send<T:Send>(_: Option<T>) {}
-    is_send::<Archive<File>>(None);
+fn archive_is_send_sync() {
+    fn is_send_sync<T: Send + Sync>(_: Option<T>) {}
+    is_send_sync::<Archive<File>>(None);
 }
 
 /// test that we can concatenate the simple.tar archive and extract the same entries twice when we
